@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Customer Lifecycle Scorecard</title>
+<meta name="description" content="Customer lifecycle KPIs vs. a hindsight benchmark and email program lift vs. a randomized holdout, computed with SQL and Python on real public retail data.">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.35.3/plotly-cartesian.min.js"></script>
+<script src="data.js"></script>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --bench: #b9b8b2;
+  --good: #0ca30c; --good-text: #006300; --bad: #d03b3b; --neutral-bg: #f0efec;
+  --seq-lo: #cde2fb; --seq-hi: #0d366b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --bench: #5c5b57;
+    --good: #0ca30c; --good-text: #0ca30c; --bad: #e66767; --neutral-bg: #383835;
+    --seq-lo: #1c2a3d; --seq-hi: #86b6ef;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --bench: #5c5b57;
+  --good: #0ca30c; --good-text: #0ca30c; --bad: #e66767; --neutral-bg: #383835;
+  --seq-lo: #1c2a3d; --seq-hi: #86b6ef;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1120px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 30px; line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.01em; }
+h2 { font-size: 20px; margin: 0 0 4px; }
+.lede { color: var(--ink-2); max-width: 760px; margin: 0 0 16px; }
+.sub { color: var(--ink-2); margin: 0 0 16px; font-size: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; }
+.chip { border: 1px solid var(--border); background: var(--surface); border-radius: 999px;
+  padding: 4px 12px; font-size: 13px; color: var(--ink-2); }
+.chip b { color: var(--ink); font-weight: 600; }
+section { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 24px; margin-top: 24px; }
+.controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin: 12px 0 20px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--ink-2); padding: 6px 12px;
+  font: inherit; font-size: 14px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.seg button:focus-visible { outline: 2px solid var(--s1); outline-offset: -2px; }
+.label { font-size: 13px; color: var(--muted); margin-right: 4px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 12px; }
+.card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; min-height: 172px;
+  display: flex; flex-direction: column; gap: 4px; }
+.card .stage { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.card .name { font-size: 14px; color: var(--ink-2); }
+.card .value { font-size: 28px; font-weight: 600; line-height: 1.2; }
+.card .bench { font-size: 13px; color: var(--ink-2); }
+.card .delta { font-size: 13px; font-weight: 600; }
+.card .ci { font-size: 12px; color: var(--muted); }
+.card .badge { margin-top: auto; font-size: 12px; display: inline-flex; gap: 6px; align-items: center; }
+.card.na { background: var(--neutral-bg); }
+.card.na .value { font-size: 16px; font-weight: 500; color: var(--ink-2); }
+.up { color: var(--good-text); } .down { color: var(--bad); } .flat { color: var(--ink-2); }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (max-width: 820px) { .grid2 { grid-template-columns: 1fr; } }
+.chart { width: 100%; height: 340px; }
+.note { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+.callout { border-left: 3px solid var(--s1); padding: 4px 0 4px 12px; margin: 12px 0 0; color: var(--ink-2); font-size: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tablewrap { overflow-x: auto; }
+.legend { display: flex; gap: 16px; font-size: 13px; color: var(--ink-2); flex-wrap: wrap; }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+.sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.scope li { margin: 4px 0; color: var(--ink-2); }
+footer { margin-top: 32px; font-size: 13px; color: var(--muted); }
+a { color: var(--s1); }
+.themebtn { float: right; }
+</style>
+</head>
+<body>
+<main>
+  <div class="seg themebtn" role="group" aria-label="Theme">
+    <button data-theme-set="light">Light</button><button data-theme-set="dark">Dark</button>
+  </div>
+  <h1>Customer Lifecycle Scorecard</h1>
+  <p class="lede">How are we doing at <b>acquiring, activating, retaining and winning back</b> customers versus the same
+    quarter last year, and do our customer programs actually move behaviour? Every number on this page is computed with
+    SQL (DuckDB) and Python from two real public retail datasets, and is significance-tested before it is called a change.</p>
+  <div class="chips" id="chips"></div>
+
+  <section id="scorecard">
+    <h2>1 · Lifecycle scorecard: current quarter vs. hindsight benchmark</h2>
+    <p class="sub">Each FY2011 quarter is compared with the same FY2010 quarter. Definitions are identical in both years,
+      including how far back we look to decide whether a customer is "new".</p>
+    <div class="controls">
+      <span><span class="label">Segment</span><span class="seg" id="segBtns"></span></span>
+      <span><span class="label">Quarter</span><span class="seg" id="qBtns"></span></span>
+    </div>
+    <div class="cards" id="cards"></div>
+    <p class="callout" id="scoreNote"></p>
+  </section>
+
+  <section>
+    <h2>2 · Where active customers come from each quarter</h2>
+    <p class="sub">Growth accounting: active customers = new + retained + reactivated. Segment follows the filter above.</p>
+    <div class="grid2">
+      <div>
+        <div class="legend" id="gaLegend"></div>
+        <div id="gaChart" class="chart" role="img" aria-label="Stacked columns of new, retained and reactivated customers by quarter"></div>
+        <p class="note">FY2010 bars are history-limited: the data starts 1 Dec 2009, so some long-standing customers first
+          appear as "new" there. The scorecard corrects for this; this chart shows the raw split.</p>
+      </div>
+      <div>
+        <div class="legend"><span>Share of each monthly new-customer cohort ordering again, by months since first order</span></div>
+        <div id="cohortChart" class="chart" role="img" aria-label="Cohort retention heatmap"></div>
+        <p class="note">FY2011 cohorts only (12+ months of history behind them, so they really are new). The final month is partial.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="programs">
+    <h2>3 · Program measurement: email campaigns vs. a randomized holdout</h2>
+    <p class="sub"><span data-n="email"></span> apparel customers were randomly split three ways: Mens email, Womens email, or no email (the holdout).
+      Lift = treated minus holdout over the following two weeks, with 95% confidence intervals.</p>
+    <div class="controls">
+      <span><span class="label">Outcome</span><span class="seg" id="oBtns"></span></span>
+    </div>
+    <div class="grid2">
+      <div>
+        <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Mens email</span><span><i class="sw" style="background:var(--s2)"></i>Womens email</span></div>
+        <div id="liftChart" class="chart" role="img" aria-label="Lift versus holdout with confidence intervals"></div>
+      </div>
+      <div>
+        <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Mens email</span><span><i class="sw" style="background:var(--s2)"></i>Womens email</span><span>visit-rate lift by lifecycle stage</span></div>
+        <div id="segLiftChart" class="chart" role="img" aria-label="Visit lift by lifecycle stage"></div>
+      </div>
+    </div>
+    <p class="callout" id="programNote"></p>
+    <p class="note" id="balanceNote"></p>
+  </section>
+
+  <section>
+    <h2>4 · Hypothesis registry</h2>
+    <p class="sub">Every declared test is shown, significant or not. q = Benjamini-Hochberg adjusted p-value across all tests.
+      Retail diagnostics use the <span data-n="cohort"></span> customers first seen Dec 2010 to Aug 2011.</p>
+    <div class="tablewrap"><table id="hypTable"></table></div>
+  </section>
+
+  <section>
+    <h2>Honest scope</h2>
+    <ul class="scope">
+      <li><b>All data is real; nothing is synthetic.</b> Retail: UCI Online Retail II (CC BY 4.0), a UK online gift-ware
+        retailer whose customers are largely wholesalers, Dec 2009 to Dec 2011. Programs: the MineThatData e-mail
+        experiment (Hillstrom, 2008), a different, apparel retailer. The two datasets are never joined.</li>
+      <li>Retail customers are identified on only <span data-n="idshare"></span> of staged lines; lines without a customer ID are excluded from customer KPIs.</li>
+      <li>Significance tests treat each quarter's customers as independent samples. Some customers appear in both years,
+        which makes the rate tests conservative.</li>
+      <li>Email lift is causal (randomized). Retail diagnostics are correlations, not causes.</li>
+      <li>Scorecard badges test each KPI on its own and are not corrected for browsing many segment × quarter
+        combinations, so expect the occasional false alarm. The hypothesis registry is corrected (Benjamini-Hochberg).</li>
+      <li>No forecasts, targets or business-impact figures are invented. "Incremental" totals are measured inside the
+        experiment population only.</li>
+    </ul>
+  </section>
+  <footer id="footer"></footer>
+</main>
+<script>
+const D = window.DATA;
+if (["#light", "#dark"].includes(location.hash)) document.documentElement.dataset.theme = location.hash.slice(1);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmtInt = v => Math.round(v).toLocaleString("en-US");
+const fmtPct = (v, d = 1) => (v * 100).toFixed(d) + "%";
+const fmtPP = (v, d = 1) => (v >= 0 ? "+" : "−") + Math.abs(v * 100).toFixed(d) + " pp";
+const fmtGBP = v => (v < 0 ? "−£" : "£") + fmtInt(Math.abs(v));
+const fmtSignedGBP = v => (v >= 0 ? "+£" : "−£") + fmtInt(Math.abs(v));
+const fmtUSD = (v, d = 2) => (v < 0 ? "−$" : "$") + Math.abs(v).toFixed(d);
+const fmtRel = v => (v >= 0 ? "+" : "−") + Math.abs(v * 100).toFixed(1) + "%";
+const fmtP = p => p < 0.001 ? "p < 0.001" : "p = " + p.toFixed(3);
+const state = { seg: "All", q: "FY2011 Q4", outcome: "visit" };
+
+function segButtons(el, options, key, onChange) {
+  el.innerHTML = "";
+  options.forEach(([val, label]) => {
+    const b = document.createElement("button");
+    b.textContent = label; b.setAttribute("aria-pressed", state[key] === val);
+    b.onclick = () => { state[key] = val; [...el.children].forEach(c => c.setAttribute("aria-pressed", c === b)); onChange(); };
+    el.appendChild(b);
+  });
+}
+
+function chips() {
+  const dq = Object.fromEntries(D.data_quality.map(r => [r.step, r.n]));
+  const items = [
+    ["Transaction lines", fmtInt(dq[1])], ["Customers", fmtInt(D.counts.customers)],
+    ["Orders", fmtInt(dq[8])], ["Email-test customers", fmtInt(D.counts.email_customers)],
+    ["Window", D.data_window.data_start_date + " → " + D.data_window.data_end_date], ["Synthetic data", "none"]];
+  document.getElementById("chips").innerHTML = items.map(([k, v]) => `<span class="chip">${k} <b>${v}</b></span>`).join("");
+}
+
+function card(r) {
+  if (!r.measurable) {
+    return `<div class="card na"><span class="stage">${r.stage}</span><span class="name">${r.label}</span>
+      <span class="value">Not measurable</span><span class="ci">${r.note}</span></div>`;
+  }
+  let value, bench, delta, ci;
+  if (r.unit === "count") {
+    value = fmtInt(r.a); bench = fmtInt(r.b); delta = fmtRel(r.rel) + " (" + (r.diff >= 0 ? "+" : "−") + fmtInt(Math.abs(r.diff)) + ")";
+    ci = "95% CI " + fmtRel(r.rel_ci_low) + " to " + fmtRel(r.rel_ci_high);
+  } else if (r.unit === "rate") {
+    value = fmtPct(r.a); bench = fmtPct(r.b); delta = fmtPP(r.diff);
+    ci = "95% CI " + fmtPP(r.ci_low) + " to " + fmtPP(r.ci_high) + " · n " + fmtInt(r.n_a) + " vs " + fmtInt(r.n_b);
+  } else {
+    value = fmtGBP(r.a); bench = fmtGBP(r.b); delta = fmtSignedGBP(r.diff) + " (" + fmtRel(r.rel) + ")";
+    ci = "95% CI " + fmtSignedGBP(r.ci_low) + " to " + fmtSignedGBP(r.ci_high);
+  }
+  const dir = r.significant ? (r.diff > 0 ? "up" : "down") : "flat";
+  const badge = r.significant
+    ? `<span class="badge"><i class="dot" style="background:${r.diff > 0 ? "var(--good)" : "var(--bad)"}"></i>${r.diff > 0 ? "▲" : "▼"} Significant change · ${fmtP(r.p_value)}</span>`
+    : `<span class="badge"><i class="dot" style="background:var(--muted)"></i>● Within noise · ${fmtP(r.p_value)}</span>`;
+  const extra = r.current_never_seen_before != null
+    ? `<span class="ci">${fmtInt(r.current_never_seen_before)} of ${fmtInt(r.a)} had never ordered in the ${r.lookback_quarters + 4} prior quarters of data</span>` : "";
+  return `<div class="card"><span class="stage">${r.stage}</span><span class="name">${r.label}</span>
+    <span class="value">${value}</span><span class="bench">vs ${bench} in ${r.benchmark}</span>
+    <span class="delta ${dir}">${delta}</span><span class="ci">${ci}</span>${extra}${badge}</div>`;
+}
+
+function renderScorecard() {
+  const rows = D.scorecard.filter(r => r.segment === state.seg && r.current === state.q);
+  document.getElementById("cards").innerHTML = rows.map(card).join("");
+  const sig = rows.filter(r => r.measurable && r.significant);
+  const m = rows.filter(r => r.measurable).length;
+  const lb = rows[0].lookback_quarters;
+  document.getElementById("scoreNote").textContent =
+    `${state.q} vs ${rows[0].benchmark}, ${state.seg === "All" ? "all customers" : state.seg + " customers"}: ` +
+    `${sig.length} of ${m} measurable KPIs moved by more than chance would explain` +
+    (sig.length ? ` (${sig.map(r => r.label.toLowerCase()).join(", ")}).` : ".") +
+    (lb >= 1 ? ` "New" means no order in the prior ${lb} quarter${lb > 1 ? "s" : ""}, the history ${rows[0].benchmark} has.` : "");
+}
+
+function baseLayout(extra = {}) {
+  return Object.assign({
+    paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+    font: { family: "system-ui, -apple-system, Segoe UI, sans-serif", size: 12, color: css("--ink-2") },
+    margin: { l: 56, r: 16, t: 12, b: 48 },
+    xaxis: { gridcolor: css("--grid"), linecolor: css("--axis"), zeroline: false, tickfont: { color: css("--muted") } },
+    yaxis: { gridcolor: css("--grid"), linecolor: css("--axis"), zerolinecolor: css("--axis"), tickfont: { color: css("--muted") } },
+    hoverlabel: { bgcolor: css("--surface"), bordercolor: css("--axis"), font: { color: css("--ink") } },
+    showlegend: false, bargap: 0.45,
+  }, extra);
+}
+const cfg = { displayModeBar: false, responsive: true };
+
+function renderGrowth() {
+  const rows = D.quarterly.filter(r => r.segment === state.seg);
+  const x = rows.map(r => r.label);
+  const series = [["new_customers", "New", "--s1"], ["reactivated_customers", "Reactivated", "--s2"], ["retained_customers", "Retained", "--s3"]];
+  document.getElementById("gaLegend").innerHTML = series.map(([, n, c]) => `<span><i class="sw" style="background:var(${c})"></i>${n}</span>`).join("");
+  const traces = series.map(([k, n, c]) => ({
+    type: "bar", name: n, x, y: rows.map(r => r[k]), marker: { color: css(c), line: { color: css("--surface"), width: 2 } },
+    hovertemplate: `%{x}<br>${n}: %{y:,}<extra></extra>`,
+  }));
+  traces.push({ type: "scatter", mode: "text", x, y: rows.map(r => r.active_customers), text: rows.map(r => fmtInt(r.active_customers)),
+    textposition: "top center", textfont: { color: css("--ink-2"), size: 11 }, hoverinfo: "skip" });
+  Plotly.react("gaChart", traces, baseLayout({
+    barmode: "stack", margin: { l: 56, r: 24, t: 12, b: 64 }, yaxis: Object.assign(baseLayout().yaxis, { title: { text: "Active customers", font: { size: 12 } }, tickformat: ",", range: [0, Math.max(...rows.map(r => r.active_customers)) * 1.18] }),
+    shapes: [{ type: "rect", xref: "x", yref: "paper", x0: -0.5, x1: 3.5, y0: 0, y1: 1, fillcolor: css("--neutral-bg"), opacity: 0.5, line: { width: 0 }, layer: "below" }],
+    annotations: [{ x: -0.4, y: 1, xref: "x", yref: "paper", text: "FY2010 · history-limited", showarrow: false, font: { size: 11, color: css("--muted") }, xanchor: "left", yanchor: "top" }],
+  }), cfg);
+}
+
+function renderCohorts() {
+  const months = [...new Set(D.cohorts.map(r => r.cohort_month))].sort();
+  const maxK = Math.max(...D.cohorts.map(r => r.months_since));
+  const ks = [...Array(maxK).keys()].map(k => k + 1);
+  const z = months.map(m => ks.map(k => { const r = D.cohorts.find(c => c.cohort_month === m && c.months_since === k); return r ? r.active_share : null; }));
+  const size = Object.fromEntries(D.cohorts.filter(r => r.months_since === 0).map(r => [r.cohort_month, r.cohort_size]));
+  const ylab = months.map(m => new Date(m + "T00:00:00").toLocaleString("en-GB", { month: "short", year: "numeric" }) + ` (n ${size[m]})`);
+  Plotly.react("cohortChart", [{
+    type: "heatmap", z, x: ks, y: ylab, colorscale: [[0, css("--seq-lo")], [1, css("--seq-hi")]], zmin: 0, zmax: 0.5,
+    xgap: 2, ygap: 2, hovertemplate: "%{y}<br>Month +%{x}: %{z:.1%} ordered<extra></extra>",
+    colorbar: { tickformat: ".0%", thickness: 10, outlinewidth: 0, tickfont: { color: css("--muted") } },
+  }], baseLayout({ margin: { l: 120, r: 8, t: 12, b: 48 },
+    xaxis: Object.assign(baseLayout().xaxis, { title: { text: "Months since first order", font: { size: 12 } }, dtick: 1, gridcolor: "rgba(0,0,0,0)" }),
+    yaxis: Object.assign(baseLayout().yaxis, { autorange: "reversed", gridcolor: "rgba(0,0,0,0)", tickfont: { size: 11, color: css("--muted") } }) }), cfg);
+}
+
+const OUT = { visit: ["Visit rate", "rate"], conversion: ["Conversion rate", "rate"], spend: ["Spend per customer", "usd"] };
+function renderPrograms() {
+  const lift = D.programs.lift.filter(r => r.outcome === state.outcome);
+  const isRate = OUT[state.outcome][1] === "rate";
+  const scale = isRate ? 100 : 1;
+  const traces = lift.map((r, i) => ({
+    type: "bar", x: [r.arm.replace(" E-Mail", " email")], y: [r.diff * scale],
+    marker: { color: css(i === 0 ? "--s1" : "--s2") }, width: 0.4,
+    error_y: { type: "data", symmetric: false, array: [(r.ci_high - r.diff) * scale], arrayminus: [(r.diff - r.ci_low) * scale], color: css("--ink-2"), thickness: 1.5, width: 6 },
+    text: [isRate ? fmtPP(r.diff, 2) : fmtUSD(r.diff)], textposition: "inside", insidetextanchor: "middle", textfont: { color: "#ffffff", size: 13 },
+    hovertemplate: `${r.arm}<br>Treated ${isRate ? fmtPct(r.a, 2) : fmtUSD(r.a)} vs holdout ${isRate ? fmtPct(r.b, 2) : fmtUSD(r.b)}<br>Lift ${isRate ? fmtPP(r.diff, 2) : fmtUSD(r.diff)} (95% CI ${isRate ? fmtPP(r.ci_low, 2) : fmtUSD(r.ci_low)} to ${isRate ? fmtPP(r.ci_high, 2) : fmtUSD(r.ci_high)})<extra></extra>`,
+  }));
+  Plotly.react("liftChart", traces, baseLayout({ margin: { l: 56, r: 16, t: 28, b: 40 },
+    yaxis: Object.assign(baseLayout().yaxis, { title: { text: isRate ? "Lift vs holdout (pp)" : "Lift vs holdout ($ per customer)", font: { size: 12 } }, rangemode: "tozero" }) }), cfg);
+
+  const order = ["New (acquired <12m)", "Active (1-3m)", "Cooling (4-6m)", "Lapsing (7-12m)"];
+  const seg = D.programs.segment_lift;
+  const segTraces = ["Mens E-Mail", "Womens E-Mail"].map((arm, i) => {
+    const rs = order.map(l => seg.find(r => r.level === l && r.arm === arm));
+    return { type: "scatter", mode: "markers", name: arm, y: order.map(l => l.replace(" (", "<br>(")), x: rs.map(r => r.diff * 100),
+      marker: { color: css(i === 0 ? "--s1" : "--s2"), size: 10, line: { color: css("--surface"), width: 2 } },
+      error_x: { type: "data", symmetric: false, array: rs.map(r => (r.ci_high - r.diff) * 100), arrayminus: rs.map(r => (r.diff - r.ci_low) * 100), color: css(i === 0 ? "--s1" : "--s2"), thickness: 2, width: 0 },
+      hovertemplate: rs.map(r => `${arm} · ${r.level}<br>Visit ${fmtPct(r.a)} vs ${fmtPct(r.b)} holdout<br>Lift ${fmtPP(r.diff)} (95% CI ${fmtPP(r.ci_low)} to ${fmtPP(r.ci_high)})<br>n ${fmtInt(r.n_a)} vs ${fmtInt(r.n_b)}<extra></extra>`),
+      offsetgroup: arm, yaxis: "y" };
+  });
+  Plotly.react("segLiftChart", segTraces, baseLayout({ margin: { l: 110, r: 16, t: 12, b: 48 }, scattermode: "group",
+    xaxis: Object.assign(baseLayout().xaxis, { title: { text: "Visit-rate lift vs holdout (pp)", font: { size: 12 } }, zeroline: true, zerolinecolor: css("--axis"), rangemode: "tozero" }),
+    yaxis: Object.assign(baseLayout().yaxis, { autorange: "reversed", gridcolor: "rgba(0,0,0,0)" }) }), cfg);
+
+  const m = lift[0], w = lift[1];
+  const fmtTot = v => isRate ? fmtInt(v) : "$" + fmtInt(v);
+  const unitWord = { visit: "visits", conversion: "orders", spend: "in spend" }[state.outcome];
+  document.getElementById("programNote").textContent =
+    `${OUT[state.outcome][0]}: the Mens email lifted it by ${isRate ? fmtPP(m.diff, 2) : fmtUSD(m.diff)} (${fmtP(m.p_value)}) and the Womens email by ` +
+    `${isRate ? fmtPP(w.diff, 2) : fmtUSD(w.diff)} (${fmtP(w.p_value)}). Inside this test that is about ${fmtTot(m.incremental_total)} and ` +
+    `${fmtTot(w.incremental_total)} incremental ${unitWord} over two weeks.`;
+  const maxSmd = Math.max(...D.programs.balance.map(b => Math.abs(b.smd)));
+  document.getElementById("balanceNote").textContent =
+    `Randomization check: the largest standardized mean difference on ${D.programs.balance.length / 2} pre-email covariates is ${maxSmd.toFixed(3)} (below the 0.1 rule of thumb), so the holdout is a fair benchmark.`;
+}
+
+function renderHypotheses() {
+  const fmtEff = r => r.unit === "pp" ? fmtPP(r.diff, 2) + `<br><span class="ci">95% CI ${fmtPP(r.ci_low, 2)} to ${fmtPP(r.ci_high, 2)}</span>`
+    : r.unit === "usd" ? fmtUSD(r.diff) + `<br><span class="ci">95% CI ${fmtUSD(r.ci_low)} to ${fmtUSD(r.ci_high)}</span>`
+    : r.unit === "rho" ? "ρ = " + r.diff.toFixed(3)
+    : "χ² = " + r.diff.toFixed(1) + `<br><span class="ci">${Object.entries(r.group_rates).map(([k, v]) => k.slice(7) + " " + fmtPct(v)).join(" · ")}</span>`;
+  const rows = D.hypotheses.map(r => `<tr><td>${r.id}</td><td>${r.question}<br><span class="ci">${r.family} · ${r.effect} · n ${fmtInt(r.n)}</span></td>
+    <td class="num">${fmtEff(r)}</td><td class="num">${r.p_value < 0.001 ? "<0.001" : r.p_value.toFixed(3)}</td>
+    <td class="num">${r.q_value < 0.001 ? "<0.001" : r.q_value.toFixed(3)}</td>
+    <td>${r.significant_bh ? '<span class="up">✓ Significant</span>' : '<span class="flat">● Not significant</span>'}</td></tr>`).join("");
+  document.getElementById("hypTable").innerHTML =
+    `<thead><tr><th>ID</th><th>Question</th><th style="text-align:right">Effect</th><th style="text-align:right">p</th><th style="text-align:right">q (BH)</th><th>Verdict</th></tr></thead><tbody>${rows}</tbody>`;
+}
+
+function renderAll() { renderScorecard(); renderGrowth(); renderCohorts(); renderPrograms(); renderHypotheses(); }
+
+chips();
+segButtons(document.getElementById("segBtns"), [["All", "All"], ["UK", "UK"], ["International", "International"]], "seg", () => { renderScorecard(); renderGrowth(); });
+segButtons(document.getElementById("qBtns"), ["FY2011 Q1", "FY2011 Q2", "FY2011 Q3", "FY2011 Q4"].map(q => [q, q.slice(7)]), "q", renderScorecard);
+segButtons(document.getElementById("oBtns"), Object.entries(OUT).map(([k, v]) => [k, v[0]]), "outcome", renderPrograms);
+document.querySelectorAll("[data-theme-set]").forEach(b => b.onclick = () => { document.documentElement.dataset.theme = b.dataset.themeSet; renderAll(); });
+document.getElementById("footer").innerHTML =
+  `Built from ${D.source} data · generated ${D.generated_at.replace("T", " ")} · SQL models in <code>sql/</code>, tests in <code>tests/</code>.`;
+const dqs = Object.fromEntries(D.data_quality.map(r => [r.step, r.n]));
+const fills = { email: fmtInt(D.counts.email_customers), cohort: fmtInt(D.hypotheses.find(h => h.id === "R1").n),
+  idshare: fmtPct(1 - dqs[5] / dqs[4], 0) };
+document.querySelectorAll("[data-n]").forEach(el => el.textContent = fills[el.dataset.n]);
+renderAll();
+</script>
+</body>
+</html>

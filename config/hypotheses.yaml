@@ -1,0 +1,83 @@
+# Hypothesis registry. Every declared test is run and reported, significant or
+# not. Benjamini-Hochberg is applied across the whole registry. These were
+# written after a first data profile (row counts, columns) but before any of
+# the tests below were run.
+
+alpha: 0.05
+
+retail_cohort:
+  # Online Retail II customers first seen Dec 2010 - Aug 2011: at least 12 months
+  # of history behind them (so "new" is believable) and a complete 90-day
+  # follow-up window (data runs to 9 Dec 2011).
+  first_order_from: 2010-12-01
+  first_order_before: 2011-09-01
+
+hypotheses:
+  - id: R1
+    family: Diagnostics (retail)
+    question: Do UK and international new customers activate at different rates?
+    test: two_proportion
+    outcome: activated_90d
+    group: segment
+    groups: [International, UK]
+  - id: R2
+    family: Diagnostics (retail)
+    question: Do new customers who cancel within 30 days activate at a different rate?
+    test: two_proportion
+    outcome: activated_90d
+    group: early_cancel
+    groups: [Cancelled within 30d, No early cancel]
+  - id: R3
+    family: Diagnostics (retail)
+    question: Is first-order value correlated with revenue over the next 90 days?
+    test: spearman
+    x: first_order_value
+    y: next_90d_revenue
+  - id: R4
+    family: Diagnostics (retail)
+    question: Does activation differ by the quarter a customer was acquired in?
+    test: chi_square
+    outcome: activated_90d
+
+  - id: P1
+    family: Program measurement
+    question: Does the Mens email lift conversion vs. the holdout?
+    test: two_proportion
+    outcome: conversion
+    arms: [Mens E-Mail, No E-Mail]
+  - id: P2
+    family: Program measurement
+    question: Does the Womens email lift conversion vs. the holdout?
+    test: two_proportion
+    outcome: conversion
+    arms: [Womens E-Mail, No E-Mail]
+  - id: P3
+    family: Program measurement
+    question: Do the Mens and Womens emails convert at different rates?
+    test: two_proportion
+    outcome: conversion
+    arms: [Mens E-Mail, Womens E-Mail]
+  - id: P4
+    family: Program measurement
+    question: Does the Mens email lift visits vs. the holdout?
+    test: two_proportion
+    outcome: visit
+    arms: [Mens E-Mail, No E-Mail]
+  - id: P5
+    family: Program measurement
+    question: Does the Womens email lift visits vs. the holdout?
+    test: two_proportion
+    outcome: visit
+    arms: [Womens E-Mail, No E-Mail]
+  - id: P6
+    family: Program measurement
+    question: Does the Mens email lift spend per customer vs. the holdout?
+    test: welch_t
+    outcome: spend
+    arms: [Mens E-Mail, No E-Mail]
+  - id: P7
+    family: Program measurement
+    question: Does the Womens email lift spend per customer vs. the holdout?
+    test: welch_t
+    outcome: spend
+    arms: [Womens E-Mail, No E-Mail]

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "customer-lifecycle-analytics"
+version = "0.1.0"
+description = "Customer lifecycle KPIs vs. a hindsight benchmark, and program measurement against a randomized holdout, on real public retail data."
+requires-python = ">=3.11"
+dependencies = [
+    "duckdb>=1.2",
+    "pandas>=2.2",
+    "pyarrow>=15",
+    "openpyxl>=3.1",
+    "numpy>=1.26",
+    "scipy>=1.12",
+    "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "statsmodels>=0.14"]
+
+[project.scripts]
+cla = "cla.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

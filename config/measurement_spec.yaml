@@ -1,0 +1,29 @@
+# Measurement spec: the calendar, cleaning rules and outcome window the SQL
+# models and the scorecard read. KPI definitions are documented in the README
+# and implemented in sql/retail/05_customer_quarter.sql + src/cla/analysis.py.
+
+calendar:
+  # Fiscal year runs Dec-Nov so the 24 complete months in the data split into
+  # two complete years: FY2010 (Dec 2009 - Nov 2010) and FY2011 (Dec 2010 - Nov 2011).
+  # Orders after FY2011 (1-9 Dec 2011) are used only as follow-up time.
+  data_start: 2009-12-01
+  first_fiscal_year: 2010
+  reporting_quarters: 8          # FY2010 Q1 .. FY2011 Q4
+
+cleaning:
+  # The workbook's two sheets overlap on 1-9 Dec 2010 (identical invoices in both).
+  overlap_sheet: "Year 2009-2010"
+  overlap_from: 2010-12-01
+  # Stock codes that are fees, postage, adjustments, vouchers or test items,
+  # not merchandise. Everything else is merchandise.
+  non_merchandise_codes: [POST, DOT, M, m, C2, C3, D, S, B, CRUK, PADS, GIFT,
+                          BANK CHARGES, ADJUST, ADJUST2, AMAZONFEE, TEST001, TEST002,
+                          DCGSSBOY, DCGSSGIRL, DCGSLBOY, DCGSLGIRL]
+  non_merchandise_prefixes: [gift_0001_]
+  home_country: United Kingdom   # segments: UK vs International
+
+activation:
+  window_days: 90                # a second order on a later calendar day within 90 days
+
+programs:
+  holdout_arm: No E-Mail

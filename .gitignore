@@ -1,0 +1,12 @@
+# downloaded public data and everything derived from it
+data/raw/
+data/marts/
+data/results/
+data/r_inputs/
+data/*.duckdb
+data/*.duckdb.wal
+# python
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.venv/
