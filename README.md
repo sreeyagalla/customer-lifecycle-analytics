@@ -1,5 +1,7 @@
 # Customer Lifecycle Scorecard
 
+[![ci](https://github.com/sreeyagalla/customer-lifecycle-analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/sreeyagalla/customer-lifecycle-analytics/actions/workflows/ci.yml)
+
 **Live demo:** https://sreeyagalla.github.io/customer-lifecycle-analytics/
 
 ![Dashboard screenshot](docs/screenshot.png)
